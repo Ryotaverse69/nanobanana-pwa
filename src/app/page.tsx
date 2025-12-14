@@ -22,46 +22,125 @@ export default function Home() {
 
   // 履歴をlocalStorageから読み込み
   useEffect(() => {
-    const saved = localStorage.getItem('uploadHistory');
-    if (saved) {
-      setHistory(JSON.parse(saved));
+    try {
+      const saved = localStorage.getItem('uploadHistory');
+      if (saved) {
+        setHistory(JSON.parse(saved));
+      }
+    } catch (e) {
+      console.error('履歴の読み込みエラー:', e);
     }
   }, []);
 
   // 履歴を保存
   const saveToHistory = useCallback((base64: string) => {
-    const newImage: HistoryImage = {
-      id: Date.now().toString(),
-      base64,
-      createdAt: Date.now()
-    };
-    setHistory(prev => {
-      const newHistory = [newImage, ...prev].slice(0, 20);
-      localStorage.setItem('uploadHistory', JSON.stringify(newHistory));
-      return newHistory;
-    });
+    try {
+      const newImage: HistoryImage = {
+        id: Date.now().toString(),
+        base64,
+        createdAt: Date.now()
+      };
+      setHistory(prev => {
+        const newHistory = [newImage, ...prev].slice(0, 10); // iPhoneのストレージ制限のため10件に制限
+        try {
+          localStorage.setItem('uploadHistory', JSON.stringify(newHistory));
+        } catch (e) {
+          console.error('履歴の保存エラー:', e);
+          // ストレージがいっぱいの場合、古い履歴を削除して再試行
+          const reducedHistory = newHistory.slice(0, 5);
+          try {
+            localStorage.setItem('uploadHistory', JSON.stringify(reducedHistory));
+          } catch {
+            localStorage.removeItem('uploadHistory');
+          }
+        }
+        return newHistory;
+      });
+    } catch (e) {
+      console.error('履歴保存エラー:', e);
+    }
   }, []);
 
   // 履歴から削除
   const deleteFromHistory = (id: string) => {
     setHistory(prev => {
       const newHistory = prev.filter(img => img.id !== id);
-      localStorage.setItem('uploadHistory', JSON.stringify(newHistory));
+      try {
+        localStorage.setItem('uploadHistory', JSON.stringify(newHistory));
+      } catch (e) {
+        console.error('履歴削除エラー:', e);
+      }
       return newHistory;
     });
   };
 
+  // 画像を圧縮する関数
+  const compressImage = (file: File, maxSize: number = 800): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      const reader = new FileReader();
+
+      reader.onload = (e) => {
+        img.onload = () => {
+          try {
+            const canvas = document.createElement('canvas');
+            let width = img.width;
+            let height = img.height;
+
+            // 最大サイズを超える場合はリサイズ
+            if (width > maxSize || height > maxSize) {
+              if (width > height) {
+                height = (height / width) * maxSize;
+                width = maxSize;
+              } else {
+                width = (width / height) * maxSize;
+                height = maxSize;
+              }
+            }
+
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            ctx?.drawImage(img, 0, 0, width, height);
+
+            // JPEG形式で圧縮（品質0.7）
+            const compressedBase64 = canvas.toDataURL('image/jpeg', 0.7).split(',')[1];
+            resolve(compressedBase64);
+          } catch (err) {
+            reject(err);
+          }
+        };
+        img.onerror = reject;
+        img.src = e.target?.result as string;
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  };
+
   // 画像アップロード
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        const base64 = (event.target?.result as string).split(',')[1];
-        setUploadedImageBase64(base64);
-        saveToHistory(base64);
-      };
-      reader.readAsDataURL(file);
+      try {
+        // 履歴用に圧縮した画像
+        const compressedBase64 = await compressImage(file, 400);
+
+        // API用にオリジナルサイズ（ただし最大1200px）の画像
+        const apiBase64 = await compressImage(file, 1200);
+
+        setUploadedImageBase64(apiBase64);
+        saveToHistory(compressedBase64);
+      } catch (err) {
+        console.error('画像処理エラー:', err);
+        // フォールバック: 圧縮なしで読み込み
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          const base64 = (event.target?.result as string).split(',')[1];
+          setUploadedImageBase64(base64);
+        };
+        reader.readAsDataURL(file);
+      }
     }
   };
 
