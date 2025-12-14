@@ -5,7 +5,17 @@ const googleAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_API_KEY!);
 
 export async function POST(request: NextRequest) {
   try {
-    const { prompt, inputImageBase64 } = await request.json();
+    const { prompt, inputImageBase64, aspectRatio } = await request.json();
+
+    // アスペクト比の指示を作成
+    let aspectInstruction = '';
+    if (aspectRatio === 'auto' && inputImageBase64) {
+      aspectInstruction = 'Match the aspect ratio of the input image.';
+    } else if (aspectRatio === 'auto') {
+      aspectInstruction = 'Aspect ratio: 16:9.';
+    } else {
+      aspectInstruction = `Aspect ratio: ${aspectRatio}.`;
+    }
 
     const model = googleAI.getGenerativeModel({
       model: 'models/gemini-3-pro-image-preview',
@@ -24,10 +34,10 @@ export async function POST(request: NextRequest) {
             data: inputImageBase64
           }
         },
-        { text: `${prompt}. Aspect ratio: 16:9. Do NOT add any watermarks, logos, or branding to the image. No visible watermarks in any corner.` }
+        { text: `${prompt}. ${aspectInstruction} Do NOT add any watermarks, logos, or branding to the image. No visible watermarks in any corner.` }
       ];
     } else {
-      contents = `Generate an image: ${prompt}. Aspect ratio: 16:9. Do NOT add any watermarks, logos, or branding to the image. No visible watermarks in any corner.`;
+      contents = `Generate an image: ${prompt}. ${aspectInstruction} Do NOT add any watermarks, logos, or branding to the image. No visible watermarks in any corner.`;
     }
 
     const response = await model.generateContent({

@@ -18,6 +18,7 @@ export default function Home() {
   const [generateStatus, setGenerateStatus] = useState<{ type: string; message: string } | null>(null);
   const [postStatus, setPostStatus] = useState<{ type: string; message: string } | null>(null);
   const [history, setHistory] = useState<HistoryImage[]>([]);
+  const [aspectRatio, setAspectRatio] = useState<string>('16:9');
 
   // 履歴をlocalStorageから読み込み
   useEffect(() => {
@@ -89,7 +90,7 @@ export default function Home() {
       const res = await fetch('/api/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt, inputImageBase64: uploadedImageBase64 })
+        body: JSON.stringify({ prompt, inputImageBase64: uploadedImageBase64, aspectRatio })
       });
       const result = await res.json();
 
@@ -217,6 +218,27 @@ export default function Home() {
               </div>
             )}
           </div>
+
+          {/* アスペクト比 */}
+          <label className="block mb-2 font-medium">アスペクト比</label>
+          <div className="flex gap-2 mb-4">
+            {['16:9', '1:1', '4:5', 'auto'].map((ratio) => (
+              <button
+                key={ratio}
+                onClick={() => setAspectRatio(ratio)}
+                className={`px-4 py-2 rounded-lg font-medium transition-all ${
+                  aspectRatio === ratio
+                    ? 'bg-yellow-400 text-gray-900'
+                    : 'bg-white/15 text-white hover:bg-white/25'
+                }`}
+              >
+                {ratio === 'auto' ? '自動' : ratio}
+              </button>
+            ))}
+          </div>
+          {aspectRatio === 'auto' && !uploadedImageBase64 && (
+            <p className="text-yellow-400/80 text-sm mb-4">※「自動」は参考画像をアップロードすると、その画像のアスペクト比を使用します</p>
+          )}
 
           {/* プロンプト */}
           <label className="block mb-2 font-medium">プロンプト（英語推奨）</label>
