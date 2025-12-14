@@ -10,6 +10,7 @@ export async function POST(request: NextRequest) {
     const model = googleAI.getGenerativeModel({
       model: 'models/gemini-3-pro-image-preview',
       generationConfig: {
+        // @ts-ignore - responseModalities is valid for image generation models
         responseModalities: ['Text', 'Image']
       }
     });
@@ -32,6 +33,7 @@ export async function POST(request: NextRequest) {
     const response = await model.generateContent({
       contents: [{ role: 'user', parts: typeof contents === 'string' ? [{ text: contents }] : contents }],
       generationConfig: {
+        // @ts-ignore - responseModalities is valid for image generation models
         responseModalities: ['Text', 'Image']
       }
     });
