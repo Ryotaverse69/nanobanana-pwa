@@ -10,6 +10,12 @@ const twitterClient = new TwitterApi({
 
 export async function POST(request: NextRequest) {
   try {
+    // 認証チェック
+    const authHeader = request.headers.get('Authorization');
+    if (!authHeader) {
+      return NextResponse.json({ success: false, error: '認証が必要です' }, { status: 401 });
+    }
+
     const { imageBase64, text } = await request.json();
 
     // Base64をBufferに変換

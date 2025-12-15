@@ -5,6 +5,12 @@ const googleAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_API_KEY!);
 
 export async function POST(request: NextRequest) {
   try {
+    // 認証チェック
+    const authHeader = request.headers.get('Authorization');
+    if (!authHeader) {
+      return NextResponse.json({ success: false, error: '認証が必要です' }, { status: 401 });
+    }
+
     const { prompt, inputImageBase64, aspectRatio } = await request.json();
 
     // アスペクト比の指示を作成

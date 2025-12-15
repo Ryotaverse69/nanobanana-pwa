@@ -20,6 +20,62 @@ export default function Home() {
   const [history, setHistory] = useState<HistoryImage[]>([]);
   const [aspectRatio, setAspectRatio] = useState<string>('16:9');
 
+  // 認証関連
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [password, setPassword] = useState('');
+  const [authError, setAuthError] = useState('');
+  const [isCheckingAuth, setIsCheckingAuth] = useState(true);
+
+  // 認証状態をチェック
+  useEffect(() => {
+    try {
+      const savedAuth = localStorage.getItem('nanobanana_auth');
+      if (savedAuth) {
+        setIsAuthenticated(true);
+      }
+    } catch (e) {
+      console.error('認証チェックエラー:', e);
+    }
+    setIsCheckingAuth(false);
+  }, []);
+
+  // ログイン処理
+  const handleLogin = async () => {
+    try {
+      const res = await fetch('/api/auth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password })
+      });
+      const result = await res.json();
+
+      if (result.success) {
+        setIsAuthenticated(true);
+        setAuthError('');
+        try {
+          localStorage.setItem('nanobanana_auth', result.token);
+        } catch (e) {
+          console.error('認証保存エラー:', e);
+        }
+      } else {
+        setAuthError('パスワードが間違っています');
+      }
+    } catch (error) {
+      setAuthError('認証エラーが発生しました');
+      console.error('認証エラー:', error);
+    }
+  };
+
+  // ログアウト処理
+  const handleLogout = () => {
+    setIsAuthenticated(false);
+    try {
+      localStorage.removeItem('nanobanana_auth');
+    } catch (e) {
+      console.error('ログアウトエラー:', e);
+    }
+  };
+
   // 履歴をlocalStorageから読み込み
   useEffect(() => {
     try {
@@ -166,9 +222,13 @@ export default function Home() {
     setGeneratedImageBase64(null);
 
     try {
+      const token = localStorage.getItem('nanobanana_auth') || '';
       const res = await fetch('/api/generate', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
         body: JSON.stringify({ prompt, inputImageBase64: uploadedImageBase64, aspectRatio })
       });
       const result = await res.json();
@@ -202,9 +262,13 @@ export default function Home() {
     setPostStatus({ type: 'loading', message: '投稿中...' });
 
     try {
+      const token = localStorage.getItem('nanobanana_auth') || '';
       const res = await fetch('/api/post', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
         body: JSON.stringify({ imageBase64: generatedImageBase64, text: tweetText })
       });
       const result = await res.json();
@@ -221,12 +285,64 @@ export default function Home() {
     setIsPosting(false);
   };
 
+  // ローディング中
+  if (isCheckingAuth) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-[#1a1a2e] to-[#16213e] text-white flex items-center justify-center">
+        <div className="text-xl">Loading...</div>
+      </div>
+    );
+  }
+
+  // 未認証の場合はログイン画面
+  if (!isAuthenticated) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-[#1a1a2e] to-[#16213e] text-white flex items-center justify-center p-4">
+        <div className="bg-white/10 backdrop-blur-md rounded-2xl p-8 border border-white/10 w-full max-w-md">
+          <h1 className="text-3xl font-bold text-center mb-8 bg-gradient-to-r from-yellow-400 to-red-500 bg-clip-text text-transparent">
+            NanoBanana
+          </h1>
+          <div className="mb-4">
+            <label className="block mb-2 font-medium">パスワード</label>
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
+              placeholder="パスワードを入力"
+              className="w-full p-3 rounded-lg bg-white/15 text-white placeholder-white/50 border-none outline-none focus:ring-2 focus:ring-yellow-400"
+            />
+          </div>
+          {authError && (
+            <div className="mb-4 p-3 rounded-lg bg-red-500/20 border border-red-500 text-red-300">
+              {authError}
+            </div>
+          )}
+          <button
+            onClick={handleLogin}
+            className="w-full bg-gradient-to-r from-yellow-400 to-red-500 text-gray-900 font-semibold px-6 py-3 rounded-lg hover:shadow-lg hover:shadow-yellow-400/40 transition-all"
+          >
+            ログイン
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#1a1a2e] to-[#16213e] text-white p-4">
       <div className="max-w-2xl mx-auto">
-        <h1 className="text-3xl font-bold text-center mb-8 bg-gradient-to-r from-yellow-400 to-red-500 bg-clip-text text-transparent">
-          NanoBanana
-        </h1>
+        <div className="flex justify-between items-center mb-8">
+          <h1 className="text-3xl font-bold bg-gradient-to-r from-yellow-400 to-red-500 bg-clip-text text-transparent">
+            NanoBanana
+          </h1>
+          <button
+            onClick={handleLogout}
+            className="text-white/60 hover:text-white text-sm"
+          >
+            ログアウト
+          </button>
+        </div>
 
         {/* 画像生成セクション */}
         <div className="bg-white/10 backdrop-blur-md rounded-2xl p-6 mb-5 border border-white/10">
