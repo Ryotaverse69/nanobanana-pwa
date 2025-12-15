@@ -10,7 +10,7 @@ interface HistoryImage {
 
 export default function Home() {
   const [prompt, setPrompt] = useState('');
-  const [uploadedImageBase64, setUploadedImageBase64] = useState<string | null>(null);
+  const [uploadedImages, setUploadedImages] = useState<string[]>([]); // 最大3枚
   const [generatedImageBase64, setGeneratedImageBase64] = useState<string | null>(null);
   const [tweetText, setTweetText] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
@@ -97,12 +97,11 @@ export default function Home() {
         createdAt: Date.now()
       };
       setHistory(prev => {
-        const newHistory = [newImage, ...prev].slice(0, 10); // iPhoneのストレージ制限のため10件に制限
+        const newHistory = [newImage, ...prev].slice(0, 10);
         try {
           localStorage.setItem('uploadHistory', JSON.stringify(newHistory));
         } catch (e) {
           console.error('履歴の保存エラー:', e);
-          // ストレージがいっぱいの場合、古い履歴を削除して再試行
           const reducedHistory = newHistory.slice(0, 5);
           try {
             localStorage.setItem('uploadHistory', JSON.stringify(reducedHistory));
@@ -143,7 +142,6 @@ export default function Home() {
             let width = img.width;
             let height = img.height;
 
-            // 最大サイズを超える場合はリサイズ
             if (width > maxSize || height > maxSize) {
               if (width > height) {
                 height = (height / width) * maxSize;
@@ -159,7 +157,6 @@ export default function Home() {
             const ctx = canvas.getContext('2d');
             ctx?.drawImage(img, 0, 0, width, height);
 
-            // JPEG形式で圧縮（品質0.7）
             const compressedBase64 = canvas.toDataURL('image/jpeg', 0.7).split(',')[1];
             resolve(compressedBase64);
           } catch (err) {
@@ -174,40 +171,45 @@ export default function Home() {
     });
   };
 
-  // 画像アップロード
+  // 画像アップロード（最大3枚）
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      try {
-        // 履歴用に圧縮した画像
-        const compressedBase64 = await compressImage(file, 400);
+    const files = e.target.files;
+    if (!files) return;
 
-        // API用にオリジナルサイズ（ただし最大1200px）の画像
+    const remainingSlots = 3 - uploadedImages.length;
+    const filesToProcess = Array.from(files).slice(0, remainingSlots);
+
+    for (const file of filesToProcess) {
+      try {
+        const compressedBase64 = await compressImage(file, 400);
         const apiBase64 = await compressImage(file, 1200);
 
-        setUploadedImageBase64(apiBase64);
+        setUploadedImages(prev => [...prev, apiBase64].slice(0, 3));
         saveToHistory(compressedBase64);
       } catch (err) {
         console.error('画像処理エラー:', err);
-        // フォールバック: 圧縮なしで読み込み
-        const reader = new FileReader();
-        reader.onload = (event) => {
-          const base64 = (event.target?.result as string).split(',')[1];
-          setUploadedImageBase64(base64);
-        };
-        reader.readAsDataURL(file);
       }
+    }
+
+    // inputをリセット
+    e.target.value = '';
+  };
+
+  // 履歴から選択（追加）
+  const selectFromHistory = (base64: string) => {
+    if (uploadedImages.length < 3 && !uploadedImages.includes(base64)) {
+      setUploadedImages(prev => [...prev, base64].slice(0, 3));
     }
   };
 
-  // 履歴から選択
-  const selectFromHistory = (base64: string) => {
-    setUploadedImageBase64(base64);
+  // 画像を1枚削除
+  const removeImage = (index: number) => {
+    setUploadedImages(prev => prev.filter((_, i) => i !== index));
   };
 
-  // 画像クリア
-  const clearImage = () => {
-    setUploadedImageBase64(null);
+  // 全画像クリア
+  const clearAllImages = () => {
+    setUploadedImages([]);
   };
 
   // 画像生成
@@ -229,7 +231,11 @@ export default function Home() {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify({ prompt, inputImageBase64: uploadedImageBase64, aspectRatio })
+        body: JSON.stringify({
+          prompt,
+          inputImages: uploadedImages.length > 0 ? uploadedImages : null,
+          aspectRatio
+        })
       });
       const result = await res.json();
 
@@ -244,6 +250,68 @@ export default function Home() {
     }
 
     setIsGenerating(false);
+  };
+
+  // 画像を保存
+  const saveImage = async () => {
+    if (!generatedImageBase64) return;
+
+    try {
+      // Base64をBlobに変換
+      const byteCharacters = atob(generatedImageBase64);
+      const byteNumbers = new Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+      }
+      const byteArray = new Uint8Array(byteNumbers);
+      const blob = new Blob([byteArray], { type: 'image/png' });
+
+      // ダウンロードリンクを作成
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `nanobanana_${Date.now()}.png`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('保存エラー:', error);
+      alert('画像の保存に失敗しました');
+    }
+  };
+
+  // 画像を共有（iPhone用）
+  const shareImage = async () => {
+    if (!generatedImageBase64) return;
+
+    try {
+      // Base64をBlobに変換
+      const byteCharacters = atob(generatedImageBase64);
+      const byteNumbers = new Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+      }
+      const byteArray = new Uint8Array(byteNumbers);
+      const blob = new Blob([byteArray], { type: 'image/png' });
+      const file = new File([blob], `nanobanana_${Date.now()}.png`, { type: 'image/png' });
+
+      if (navigator.share && navigator.canShare({ files: [file] })) {
+        await navigator.share({
+          files: [file],
+          title: 'NanoBanana生成画像',
+        });
+      } else {
+        // Web Share APIが使えない場合はダウンロード
+        saveImage();
+      }
+    } catch (error) {
+      console.error('共有エラー:', error);
+      // 共有がキャンセルされた場合はエラーを表示しない
+      if ((error as Error).name !== 'AbortError') {
+        alert('共有に失敗しました');
+      }
+    }
   };
 
   // X投稿
@@ -349,42 +417,60 @@ export default function Home() {
           <h2 className="text-xl font-semibold mb-4 text-yellow-400">1. 画像を生成</h2>
 
           {/* アップロードエリア */}
-          <label className="block mb-2 font-medium">参考画像（オプション）</label>
-          <div
-            className={`border-2 border-dashed rounded-xl p-5 text-center mb-4 cursor-pointer transition-all ${
-              uploadedImageBase64 ? 'border-green-500 bg-green-500/10' : 'border-white/30 hover:border-yellow-400 hover:bg-yellow-400/10'
-            }`}
-            onClick={() => document.getElementById('imageInput')?.click()}
-          >
-            <input
-              type="file"
-              id="imageInput"
-              accept="image/*"
-              className="hidden"
-              onChange={handleImageUpload}
-            />
-            {uploadedImageBase64 ? (
-              <div>
-                <img
-                  src={`data:image/png;base64,${uploadedImageBase64}`}
-                  alt="Upload Preview"
-                  className="max-w-[200px] max-h-[200px] mx-auto rounded-lg mb-2"
-                />
-                <button
-                  onClick={(e) => { e.stopPropagation(); clearImage(); }}
-                  className="bg-red-500/30 hover:bg-red-500/50 text-white px-3 py-1 rounded text-sm"
-                >
-                  画像をクリア
-                </button>
-              </div>
-            ) : (
-              <p className="text-white/70">クリックして画像をアップロード</p>
-            )}
-          </div>
+          <label className="block mb-2 font-medium">参考画像（最大3枚）</label>
+
+          {/* アップロード済み画像のプレビュー */}
+          {uploadedImages.length > 0 && (
+            <div className="flex gap-2 mb-3 flex-wrap">
+              {uploadedImages.map((img, index) => (
+                <div key={index} className="relative">
+                  <img
+                    src={`data:image/jpeg;base64,${img}`}
+                    alt={`Upload ${index + 1}`}
+                    className="w-20 h-20 object-cover rounded-lg border-2 border-green-500"
+                  />
+                  <button
+                    onClick={() => removeImage(index)}
+                    className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 rounded-full text-white text-xs flex items-center justify-center"
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {uploadedImages.length < 3 && (
+            <div
+              className="border-2 border-dashed rounded-xl p-5 text-center mb-4 cursor-pointer transition-all border-white/30 hover:border-yellow-400 hover:bg-yellow-400/10"
+              onClick={() => document.getElementById('imageInput')?.click()}
+            >
+              <input
+                type="file"
+                id="imageInput"
+                accept="image/*"
+                multiple
+                className="hidden"
+                onChange={handleImageUpload}
+              />
+              <p className="text-white/70">
+                クリックして画像を追加（残り{3 - uploadedImages.length}枚）
+              </p>
+            </div>
+          )}
+
+          {uploadedImages.length > 0 && (
+            <button
+              onClick={clearAllImages}
+              className="mb-4 bg-red-500/30 hover:bg-red-500/50 text-white px-3 py-1 rounded text-sm"
+            >
+              すべてクリア
+            </button>
+          )}
 
           {/* 履歴 */}
           <div className="mb-4">
-            <h3 className="text-sm text-white/80 mb-2">アップロード履歴</h3>
+            <h3 className="text-sm text-white/80 mb-2">アップロード履歴（タップで追加）</h3>
             {history.length === 0 ? (
               <p className="text-white/50 text-sm text-center py-4">履歴がありません</p>
             ) : (
@@ -393,12 +479,12 @@ export default function Home() {
                   <div
                     key={img.id}
                     className={`relative aspect-square rounded-lg overflow-hidden cursor-pointer border-2 transition-all hover:scale-105 ${
-                      uploadedImageBase64 === img.base64 ? 'border-green-500' : 'border-transparent hover:border-yellow-400'
+                      uploadedImages.includes(img.base64) ? 'border-green-500' : 'border-transparent hover:border-yellow-400'
                     }`}
                     onClick={() => selectFromHistory(img.base64)}
                   >
                     <img
-                      src={`data:image/png;base64,${img.base64}`}
+                      src={`data:image/jpeg;base64,${img.base64}`}
                       alt="History"
                       className="w-full h-full object-cover"
                     />
@@ -416,7 +502,7 @@ export default function Home() {
 
           {/* アスペクト比 */}
           <label className="block mb-2 font-medium">アスペクト比</label>
-          <div className="flex gap-2 mb-4">
+          <div className="flex gap-2 mb-4 flex-wrap">
             {['16:9', '1:1', '4:5', 'auto'].map((ratio) => (
               <button
                 key={ratio}
@@ -431,7 +517,7 @@ export default function Home() {
               </button>
             ))}
           </div>
-          {aspectRatio === 'auto' && !uploadedImageBase64 && (
+          {aspectRatio === 'auto' && uploadedImages.length === 0 && (
             <p className="text-yellow-400/80 text-sm mb-4">※「自動」は参考画像をアップロードすると、その画像のアスペクト比を使用します</p>
           )}
 
@@ -471,8 +557,30 @@ export default function Home() {
             <img
               src={`data:image/png;base64,${generatedImageBase64}`}
               alt="Generated Image"
-              className="max-w-full max-h-[400px] mx-auto rounded-xl"
+              className="max-w-full max-h-[400px] mx-auto rounded-xl mb-4"
             />
+
+            {/* 保存・共有ボタン */}
+            <div className="flex gap-3 justify-center">
+              <button
+                onClick={saveImage}
+                className="bg-green-500 hover:bg-green-600 text-white font-semibold px-6 py-2 rounded-lg transition-all flex items-center gap-2"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clipRule="evenodd" />
+                </svg>
+                保存
+              </button>
+              <button
+                onClick={shareImage}
+                className="bg-purple-500 hover:bg-purple-600 text-white font-semibold px-6 py-2 rounded-lg transition-all flex items-center gap-2"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                  <path d="M15 8a3 3 0 10-2.977-2.63l-4.94 2.47a3 3 0 100 4.319l4.94 2.47a3 3 0 10.895-1.789l-4.94-2.47a3.027 3.027 0 000-.74l4.94-2.47C13.456 7.68 14.19 8 15 8z" />
+                </svg>
+                共有
+              </button>
+            </div>
           </div>
         )}
 

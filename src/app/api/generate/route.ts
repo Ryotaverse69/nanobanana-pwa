@@ -11,12 +11,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: '認証が必要です' }, { status: 401 });
     }
 
-    const { prompt, inputImageBase64, aspectRatio } = await request.json();
+    const { prompt, inputImages, aspectRatio } = await request.json();
 
     // アスペクト比の指示を作成
     let aspectInstruction = '';
-    if (aspectRatio === 'auto' && inputImageBase64) {
-      aspectInstruction = 'Match the aspect ratio of the input image.';
+    if (aspectRatio === 'auto' && inputImages && inputImages.length > 0) {
+      aspectInstruction = 'Match the aspect ratio of the first input image.';
     } else if (aspectRatio === 'auto') {
       aspectInstruction = 'Aspect ratio: 16:9.';
     } else {
@@ -31,23 +31,30 @@ export async function POST(request: NextRequest) {
       }
     });
 
-    let contents;
-    if (inputImageBase64) {
-      contents = [
-        {
+    // コンテンツを構築
+    const parts: Array<{ inlineData: { mimeType: string; data: string } } | { text: string }> = [];
+
+    // 複数画像がある場合、すべて追加
+    if (inputImages && inputImages.length > 0) {
+      for (const imageBase64 of inputImages) {
+        parts.push({
           inlineData: {
-            mimeType: 'image/png',
-            data: inputImageBase64
+            mimeType: 'image/jpeg',
+            data: imageBase64
           }
-        },
-        { text: `${prompt}. ${aspectInstruction} Do NOT add any watermarks, logos, or branding to the image. No visible watermarks in any corner.` }
-      ];
+        });
+      }
+      parts.push({
+        text: `${prompt}. ${aspectInstruction} Do NOT add any watermarks, logos, or branding to the image. No visible watermarks in any corner.`
+      });
     } else {
-      contents = `Generate an image: ${prompt}. ${aspectInstruction} Do NOT add any watermarks, logos, or branding to the image. No visible watermarks in any corner.`;
+      parts.push({
+        text: `Generate an image: ${prompt}. ${aspectInstruction} Do NOT add any watermarks, logos, or branding to the image. No visible watermarks in any corner.`
+      });
     }
 
     const response = await model.generateContent({
-      contents: [{ role: 'user', parts: typeof contents === 'string' ? [{ text: contents }] : contents }],
+      contents: [{ role: 'user', parts }],
       generationConfig: {
         // @ts-ignore - responseModalities is valid for image generation models
         responseModalities: ['Text', 'Image']
