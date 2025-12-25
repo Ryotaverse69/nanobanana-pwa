@@ -252,6 +252,12 @@ export default function Home() {
     setIsGenerating(false);
   };
 
+  // iOSかどうかを判定
+  const isIOS = () => {
+    return /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+      (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  };
+
   // 画像を保存
   const saveImage = async () => {
     if (!generatedImageBase64) return;
@@ -265,19 +271,29 @@ export default function Home() {
       }
       const byteArray = new Uint8Array(byteNumbers);
       const blob = new Blob([byteArray], { type: 'image/png' });
+      const file = new File([blob], `nanobanana_${Date.now()}.png`, { type: 'image/png' });
 
-      // ダウンロードリンクを作成
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `nanobanana_${Date.now()}.png`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+      // iOSの場合は共有シートを使う（写真に保存オプションが表示される）
+      if (isIOS() && navigator.share && navigator.canShare({ files: [file] })) {
+        await navigator.share({
+          files: [file],
+        });
+      } else {
+        // PCの場合はダウンロード
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `nanobanana_${Date.now()}.png`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }
     } catch (error) {
       console.error('保存エラー:', error);
-      alert('画像の保存に失敗しました');
+      if ((error as Error).name !== 'AbortError') {
+        alert('画像の保存に失敗しました');
+      }
     }
   };
 
