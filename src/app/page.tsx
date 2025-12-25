@@ -129,6 +129,18 @@ export default function Home() {
     });
   };
 
+  // 履歴をすべて削除
+  const clearAllHistory = () => {
+    if (confirm('アップロード履歴をすべて削除しますか？')) {
+      setHistory([]);
+      try {
+        localStorage.removeItem('uploadHistory');
+      } catch (e) {
+        console.error('履歴削除エラー:', e);
+      }
+    }
+  };
+
   // 画像を圧縮する関数
   const compressImage = (file: File, maxSize: number = 800): Promise<string> => {
     return new Promise((resolve, reject) => {
@@ -486,7 +498,17 @@ export default function Home() {
 
           {/* 履歴 */}
           <div className="mb-4">
-            <h3 className="text-sm text-white/80 mb-2">アップロード履歴（タップで追加）</h3>
+            <div className="flex justify-between items-center mb-2">
+              <h3 className="text-sm text-white/80">アップロード履歴（タップで追加）</h3>
+              {history.length > 0 && (
+                <button
+                  onClick={clearAllHistory}
+                  className="text-xs text-red-400 hover:text-red-300"
+                >
+                  すべて削除
+                </button>
+              )}
+            </div>
             {history.length === 0 ? (
               <p className="text-white/50 text-sm text-center py-4">履歴がありません</p>
             ) : (
@@ -506,7 +528,7 @@ export default function Home() {
                     />
                     <button
                       onClick={(e) => { e.stopPropagation(); deleteFromHistory(img.id); }}
-                      className="absolute top-1 right-1 w-5 h-5 bg-red-500/80 rounded-full text-xs flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity"
+                      className="absolute top-1 right-1 w-5 h-5 bg-red-500 rounded-full text-xs flex items-center justify-center"
                     >
                       ×
                     </button>
